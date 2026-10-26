@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Project Rescue — مساعد متابعة تعثر المشاريع</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+  --bg:#f5f7fb;--card:#ffffff;--text:#1b2433;--muted:#66728a;--line:#e1e6ef;
+  --brand:#3b5bdb;--brand-text:#ffffff;
+  --ok:#2b8a3e;--ok-bg:#e6f6ea;--late:#c92a2a;--late-bg:#fdeaea;
+  --warn:#b36b00;--warn-bg:#fff3dc;--doing:#1c6ea4;--doing-bg:#e3f1fb;--todo:#5b6577;--todo-bg:#eceff4;
+}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#10141c;--card:#1a2030;--text:#e8ecf4;--muted:#9aa6bd;--line:#2b3347;
+    --brand:#7c9cff;--brand-text:#0d1220;
+    --ok:#6fd48a;--ok-bg:#1b3325;--late:#ff8787;--late-bg:#3a1d1f;
+    --warn:#ffc266;--warn-bg:#3a2d14;--doing:#7cc4f2;--doing-bg:#162b3b;--todo:#b0bacd;--todo-bg:#262d3f;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#10141c;--card:#1a2030;--text:#e8ecf4;--muted:#9aa6bd;--line:#2b3347;
+  --brand:#7c9cff;--brand-text:#0d1220;
+  --ok:#6fd48a;--ok-bg:#1b3325;--late:#ff8787;--late-bg:#3a1d1f;
+  --warn:#ffc266;--warn-bg:#3a2d14;--doing:#7cc4f2;--doing-bg:#162b3b;--todo:#b0bacd;--todo-bg:#262d3f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",Tahoma,Arial,sans-serif;line-height:1.7}
+.wrap{max-width:980px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+h1{margin:0;font-size:1.6rem}
+header p{margin:2px 0 0;color:var(--muted)}
+h2{font-size:1.1rem;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
+.stat b{display:block;font-size:1.8rem;line-height:1.2}
+.stat span{color:var(--muted);font-size:.9rem}
+.stat.late b{color:var(--late)}.stat.warn b{color:var(--warn)}.stat.ok b{color:var(--ok)}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;align-items:end}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:3px}
+input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--text);font:inherit}
+button{font:inherit;cursor:pointer;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:9px 14px}
+button.primary{background:var(--brand);color:var(--brand-text);border-color:var(--brand);font-weight:600}
+button.small{padding:4px 10px;font-size:.85rem}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:640px}
+th,td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--line);font-size:.92rem;vertical-align:middle}
+th{color:var(--muted);font-weight:600}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.8rem;font-weight:600}
+.b-done{background:var(--ok-bg);color:var(--ok)}.b-doing{background:var(--doing-bg);color:var(--doing)}
+.b-todo{background:var(--todo-bg);color:var(--todo)}.b-late{background:var(--late-bg);color:var(--late)}
+.b-risk{background:var(--warn-bg);color:var(--warn)}
+.issue{border-right:4px solid var(--line);padding:10px 12px;margin-bottom:10px;background:var(--bg);border-radius:8px}
+.issue.late{border-right-color:var(--late)}.issue.risk{border-right-color:var(--warn)}.issue.info{border-right-color:var(--doing)}
+.issue strong{display:block}
+.issue small{color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:12px}
+.note{color:var(--muted);font-size:.85rem;margin-top:8px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>🛟 Project Rescue</h1>
+    <p>مساعد متابعة تعثر المشاريع — يكتشف المهام المتأخرة ويقترح الإجراء التالي</p>
+  </div>
+  <div class="actions">
+    <button id="resetBtn" class="small">إعادة البيانات التجريبية</button>
+  </div>
+</header>
+<p id="connectionStatus" class="note" role="status">جارٍ الاتصال بـ Firebase...</p>
+
+<!-- 1) لوحة المشروع -->
+<section class="stats" id="stats"></section>
+
+<!-- 2) اكتشاف المشكلات + اقتراح الإجراء -->
+<section class="card">
+  <h2>🔎 المشكلات المكتشفة والإجراء المقترح</h2>
+  <div id="issues"></div>
+  <p class="note">الاقتراحات مبنية على قواعد بسيطة وواضحة (تأخر الموعد، الاعتماد على مهمة متأخرة، قرب الموعد، غياب المسؤول)، وليست قرارات آلية مضمونة.</p>
+</section>
+
+<!-- 3) إضافة مهمة -->
+<section class="card">
+  <h2>➕ إضافة مهمة</h2>
+  <form id="taskForm">
+    <div><label for="fName">اسم المهمة</label><input id="fName" required maxlength="60"></div>
+    <div><label for="fOwner">المسؤول</label><input id="fOwner" maxlength="40" placeholder="اتركيه فارغًا إن لم يُحدد"></div>
+    <div><label for="fDue">الموعد النهائي</label><input id="fDue" type="date" required></div>
+    <div><label for="fStatus">الحالة</label>
+      <select id="fStatus">
+        <option value="todo">لم تبدأ</option>
+        <option value="doing">قيد التنفيذ</option>
+        <option value="done">مكتملة</option>
+      </select></div>
+    <div><label for="fDep">تعتمد على مهمة</label><select id="fDep"></select></div>
+    <div><button class="primary" type="submit">إضافة</button></div>
+  </form>
+</section>
+
+<!-- 4) إدارة المهام -->
+<section class="card">
+  <h2>📋 المهام</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>المهمة</th><th>المسؤول</th><th>الموعد</th><th>الحالة</th><th>التقييم</th><th>تعتمد على</th><th></th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+</div>
+
+<script>
+/* =====================================================
+   الجزء 1: الاتصال بـ Firebase والتخزين
+   استبدلي القيم التجريبية في firebaseConfig بإعدادات تطبيقك.
+   ===================================================== */
+
+var firebaseConfig = {
+  apiKey: "AIzaSyCwI9dNl7QR7kUO7u7ETPd5IqRjTfxd9rc",
+  authDomain: "project-rescue-3676e.firebaseapp.com",
+  projectId: "project-rescue-3676e",
+  storageBucket: "project-rescue-3676e.firebasestorage.app",
+  messagingSenderId: "726999688436",
+  appId: "1:726999688436:web:fb2bfe95968e3e2640aaa1"
+};
+
+var db = null;
+var firebaseReady = false;
+var tasks = [];
+
+function daysFromToday(n){
+  var d = new Date(); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0,10);
+}
+
+function demoTasks(){
+  return [
+    {id:1, name:"تصميم الواجهة", owner:"سارة", due:daysFromToday(-5), status:"done", dep:null},
+    {id:2, name:"ربط قاعدة البيانات", owner:"خالد", due:daysFromToday(-3), status:"doing", dep:1},
+    {id:3, name:"اختبار تسجيل الدخول", owner:"", due:daysFromToday(4), status:"todo", dep:2},
+    {id:4, name:"تجهيز العرض", owner:"نورة", due:daysFromToday(1), status:"doing", dep:null}
+  ];
+}
+
+var dataRef = null;
+function setConnectionMessage(message){
+  var el = document.getElementById("connectionStatus");
+  if(el) el.textContent = message;
+}
+
+async function loadTasks(){
+  try {
+    if (!window.firebase || firebaseConfig.apiKey === "PASTE_API_KEY_HERE") {
+      throw new Error("CONFIG_MISSING");
+    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    dataRef = db.collection("projectRescueData").doc("tasks");
+    var snap = await dataRef.get();
+    if (snap.exists && Array.isArray(snap.data().tasks)) {
+      tasks = snap.data().tasks;
+    } else {
+      tasks = demoTasks();
+      await dataRef.set({tasks: tasks, updatedAt: firebase.firestore.FieldValue.serverTimestamp()});
+    }
+    firebaseReady = true;
+    setConnectionMessage("متصل بـ Firebase — يتم حفظ المهام سحابيًا");
+  } catch (err) {
+    tasks = demoTasks();
+    firebaseReady = false;
+    setConnectionMessage("لم يتم الاتصال بـ Firebase بعد؛ تُعرض بيانات تجريبية فقط.");
+    console.error("Firebase setup/load error:", err);
+  }
+  refresh();
+}
+
+function saveTasks(){
+  if (!firebaseReady || !dataRef) return;
+  dataRef.set({
+    tasks: tasks,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(function(){
+    setConnectionMessage("تم حفظ التغييرات في Firebase");
+  }).catch(function(err){
+    setConnectionMessage("تعذر الحفظ في Firebase؛ راجعي إعدادات الاتصال والأمان.");
+    console.error("Firebase save error:", err);
+  });
+}
+
+/* =====================================================
+   الجزء 2: منطق اكتشاف المشكلات (قلب المشروع)
+   ===================================================== */
+function today(){ return daysFromToday(0); }
+
+function byId(id){
+  for(var i=0;i<tasks.length;i++){ if(tasks[i].id===id) return tasks[i]; }
+  return null;
+}
+
+// هل المهمة متأخرة؟ (لم تكتمل وتجاوزت موعدها)
+function isLate(t){ return t.status !== "done" && t.due < today(); }
+
+// هل المهمة متأثرة؟ (تعتمد على مهمة لم تكتمل وهي متأخرة)
+function isAffected(t){
+  if(t.status === "done" || !t.dep) return false;
+  var parent = byId(t.dep);
+  return !!parent && isLate(parent);
+}
+
+// هل موعدها قريب؟ (خلال يومين ولم تكتمل)
+function isDueSoon(t){
+  return t.status !== "done" && !isLate(t) && t.due <= daysFromToday(2);
+}
+
+function analyze(){
+  var issues = [];
+  tasks.forEach(function(t){
+    if(isLate(t)){
+      issues.push({type:"late", title:"المهمة «"+t.name+"» متأخرة",
+        action: t.owner ? "تواصلي مع "+t.owner+" لمعرفة سبب التأخير وحددي موعدًا جديدًا واضحًا."
+                        : "حددي مسؤولًا عن هذه المهمة أولًا، ثم اطلبي موعدًا جديدًا."});
+    }
+    if(isAffected(t)){
+      var p = byId(t.dep);
+      issues.push({type:"risk", title:"المهمة «"+t.name+"» قد تتأثر",
+        action:"تعتمد على «"+p.name+"» المتأخرة. راجعي موعد «"+t.name+"» أو أخّريه."});
+    }
+    if(isDueSoon(t) && !isAffected(t)){
+      issues.push({type:"info", title:"موعد «"+t.name+"» قريب",
+        action:"تأكدي من جاهزيتها وراجعي ما بقي منها قبل الموعد."});
+    }
+    if(t.status !== "done" && !t.owner){
+      issues.push({type:"info", title:"المهمة «"+t.name+"» بلا مسؤول",
+        action:"حددي شخصًا مسؤولًا عنها حتى لا تضيع."});
+    }
+  });
+  return issues;
+}
+
+/* =====================================================
+   الجزء 3: العرض على الشاشة
+   ===================================================== */
+var STATUS_TEXT = {todo:"لم تبدأ", doing:"قيد التنفيذ", done:"مكتملة"};
+
+function el(tag, cls, text){
+  var e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(text !== undefined) e.textContent = text;
+  return e;
+}
+
+function renderStats(){
+  var done = tasks.filter(function(t){return t.status==="done";}).length;
+  var late = tasks.filter(isLate).length;
+  var follow = tasks.filter(function(t){return isAffected(t) || isDueSoon(t);}).length;
+  var box = document.getElementById("stats");
+  box.innerHTML = "";
+  [["إجمالي المهام", tasks.length, ""],
+   ["مكتملة", done, "ok"],
+   ["متأخرة", late, "late"],
+   ["تحتاج متابعة", follow, "warn"]].forEach(function(s){
+    var d = el("div","stat "+s[2]);
+    d.appendChild(el("b","",String(s[1])));
+    d.appendChild(el("span","",s[0]));
+    box.appendChild(d);
+  });
+}
+
+function renderIssues(){
+  var box = document.getElementById("issues");
+  box.innerHTML = "";
+  var list = analyze();
+  if(!list.length){ box.appendChild(el("div","empty","لا توجد مشكلات حاليًا 🎉")); return; }
+  list.forEach(function(i){
+    var d = el("div","issue "+i.type);
+    d.appendChild(el("strong","",i.title));
+    d.appendChild(el("small","","الإجراء المقترح: "+i.action));
+    box.appendChild(d);
+  });
+}
+
+function renderDepSelect(){
+  var s = document.getElementById("fDep");
+  s.innerHTML = "";
+  var none = el("option","","— لا شيء —"); none.value = ""; s.appendChild(none);
+  tasks.forEach(function(t){
+    var o = el("option","",t.name); o.value = String(t.id); s.appendChild(o);
+  });
+}
+
+function evalBadge(t){
+  if(t.status==="done") return el("span","badge b-done","لا تحتاج متابعة");
+  if(isLate(t)) return el("span","badge b-late","متأخرة");
+  if(isAffected(t)) return el("span","badge b-risk","قد تتأثر");
+  if(isDueSoon(t)) return el("span","badge b-risk","تحتاج مراجعة الموعد");
+  return el("span","badge b-todo","سليمة");
+}
+
+function renderTable(){
+  var body = document.getElementById("tbody");
+  body.innerHTML = "";
+  if(!tasks.length){
+    var r = el("tr"); var c = el("td","empty","لا توجد مهام بعد"); c.colSpan = 7; r.appendChild(c); body.appendChild(r); return;
+  }
+  tasks.forEach(function(t){
+    var tr = el("tr");
+    tr.appendChild(el("td","",t.name));
+    tr.appendChild(el("td","",t.owner || "—"));
+    tr.appendChild(el("td","",t.due));
+
+    var tdS = el("td"); var sel = el("select");
+    ["todo","doing","done"].forEach(function(k){
+      var o = el("option","",STATUS_TEXT[k]); o.value = k; if(t.status===k) o.selected = true; sel.appendChild(o);
+    });
+    sel.addEventListener("change", function(){ t.status = sel.value; refresh(); });
+    tdS.appendChild(sel); tr.appendChild(tdS);
+
+    var tdE = el("td"); tdE.appendChild(evalBadge(t)); tr.appendChild(tdE);
+
+    var p = t.dep ? byId(t.dep) : null;
+    tr.appendChild(el("td","", p ? p.name : "—"));
+
+    var tdD = el("td"); var del = el("button","small","حذف");
+    del.addEventListener("click", function(){
+      tasks = tasks.filter(function(x){return x.id!==t.id;});
+      tasks.forEach(function(x){ if(x.dep===t.id) x.dep = null; });
+      refresh();
+    });
+    tdD.appendChild(del); tr.appendChild(tdD);
+    body.appendChild(tr);
+  });
+}
+
+function refresh(){
+  saveTasks();
+  renderStats(); renderIssues(); renderTable(); renderDepSelect();
+}
+
+/* =====================================================
+   الجزء 4: الأزرار والنموذج
+   ===================================================== */
+document.getElementById("taskForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  var nextId = tasks.reduce(function(m,t){return Math.max(m,t.id);},0) + 1;
+  var dep = document.getElementById("fDep").value;
+  tasks.push({
+    id: nextId,
+    name: document.getElementById("fName").value.trim(),
+    owner: document.getElementById("fOwner").value.trim(),
+    due: document.getElementById("fDue").value,
+    status: document.getElementById("fStatus").value,
+    dep: dep ? Number(dep) : null
+  });
+  e.target.reset();
+  refresh();
+});
+
+document.getElementById("resetBtn").addEventListener("click", function(){
+  if (!confirm("هل تريدين استبدال المهام الحالية بالبيانات التجريبية؟")) return;
+  tasks = demoTasks();
+  refresh();
+});
+
+loadTasks();
+</script>
+</body>
+</html>
